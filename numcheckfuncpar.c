@@ -9,3 +9,7 @@
  * sequencial - e nenhum outro. 
  * A saída deve sequir exatamente o mesmo formato da versão sequencial.
  */
+int main(int argc, char *argv[])
+{
+    return 0;
+}
