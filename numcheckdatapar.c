@@ -13,13 +13,14 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <pthread.h>
-#include <unistd.h>
 
 #include "timediff.h"   // calcula tempo decorrido
 #include "numchecks.h"  // conta números com mais condições válidas
 #include "conditions.h" // verifica cada condição
 
-#define NUM_THREADS 4
+#define NUM_THREADS 8
+
+pthread_mutex_t lock;
 
 struct threadArgs
 {
@@ -29,9 +30,6 @@ struct threadArgs
     int ndigits;
 };
 
-// Variáveis globais
-pthread_mutex_t lock;
-
 // Contadores para cada uma das condições testadas
 long match_some_test = 0,
      palindromes = 0,
@@ -40,61 +38,8 @@ long match_some_test = 0,
      have_tripled_digits = 0,
      have_four_repetitions = 0;
 
-// check_num: concentra todos os testes a serem aplicados a cada número.
-void check_num(long n, int ndigits)
-{
-    int all, pal, rep, sum, dou, fou;
-    digit_t num;
-    long orign = n;
-
-    // Transforma número (n) em vetor de dígitos (num)
-    break_into_digits(n, num, ndigits);
-
-    // Aplica os diversos testes a um dado número
-    pal = is_palindrome(num, ndigits);
-    rep = has_repeated_seq(num, ndigits);
-    sum = sum_is_ap(num, ndigits);
-    dou = has_tripled_digits(num, ndigits);
-    fou = has_four_repetitions(num, ndigits);
-
-    // Para processar número de condições satisfeitas
-    all = pal + rep + sum + dou + fou;
-
-    // Seção crítica
-    pthread_mutex_lock(&lock);
-    if (all > 0)
-    {
-        match_some_test += 1;
-    }
-    update_max(orign, all);
-
-    // Atualiza os contadores por condição
-    palindromes += pal;
-    repeated_seqs += rep;
-    sums_are_ap += sum;
-    have_tripled_digits += dou;
-    have_four_repetitions += fou;
-    pthread_mutex_unlock(&lock);
-}
-
-void *processData(void *input)
-{
-    long begin = ((struct threadArgs *)input)->begin;
-    long end = ((struct threadArgs *)input)->end;
-    long max = ((struct threadArgs *)input)->max;
-    int ndigits = ((struct threadArgs *)input)->ndigits;
-
-    if (begin < max && end <= max)
-    {
-        // printf("%ld %ld %d\n", begin, end, ndigits);
-        for (long i = begin; i <= end; ++i)
-        {
-            check_num(i, ndigits);
-        }
-    }
-
-    return 0;
-}
+void check_num(long n, int ndigits);
+void *processData(void *input);
 
 int main(int argc, char *argv[])
 {
@@ -162,6 +107,65 @@ int main(int argc, char *argv[])
     printf("%ld have_four_repetitions\n", have_four_repetitions);
     print_max(ndigits);
     printf("\ntempo: %lf\n", timediff(&t2, &t1));
+
+    return 0;
+}
+
+// check_num: concentra todos os testes a serem aplicados a cada número.
+void check_num(long n, int ndigits)
+{
+    int all, pal, rep, sum, dou, fou;
+    digit_t num;
+    long orign = n;
+
+    // Transforma número (n) em vetor de dígitos (num)
+    break_into_digits(n, num, ndigits);
+
+    // Aplica os diversos testes a um dado número
+    pal = is_palindrome(num, ndigits);
+    rep = has_repeated_seq(num, ndigits);
+    sum = sum_is_ap(num, ndigits);
+    dou = has_tripled_digits(num, ndigits);
+    fou = has_four_repetitions(num, ndigits);
+
+    // Para processar número de condições satisfeitas
+    all = pal + rep + sum + dou + fou;
+
+    // Seção crítica
+    pthread_mutex_lock(&lock);
+    if (all > 0)
+    {
+        match_some_test += 1;
+    }
+    update_max(orign, all);
+
+    // Atualiza os contadores por condição
+    palindromes += pal;
+    repeated_seqs += rep;
+    sums_are_ap += sum;
+    have_tripled_digits += dou;
+    have_four_repetitions += fou;
+
+    // Fim da seção crítica
+    pthread_mutex_unlock(&lock);
+}
+
+// processData processa paralelamente cada uma das subdivisões do conjunto de entrada
+void *processData(void *input)
+{
+    long begin = ((struct threadArgs *)input)->begin;
+    long end = ((struct threadArgs *)input)->end;
+    long max = ((struct threadArgs *)input)->max;
+    int ndigits = ((struct threadArgs *)input)->ndigits;
+
+    if (begin < max && end <= max)
+    {
+        // printf("%ld %ld %d\n", begin, end, ndigits);
+        for (long i = begin; i <= end; ++i)
+        {
+            check_num(i, ndigits);
+        }
+    }
 
     return 0;
 }
