@@ -23,16 +23,27 @@
 #include "conditions.h" // verifica cada condição
 
 #define NUM_THREADS 5
+#define ISPALINDROME 0
+#define HASREPSEQ 1
+#define SUMISAP 2
+#define HASTRPLDIGITS 3
+#define HASFOURREP 4
 
-pthread_mutex_t lock_all, lock_sem;
-sem_t semaphore;
-int semCounter = 0;
-int all = 0;
+pthread_mutex_t lock_all;
+long maxnum;
+int ndigits; // núm. de dígitos para representar até o maior número
+int totalLoops = 0;
 
-struct threadArgs
+struct calcThreadArgs
 {
-    long maxnum;
-    int ndigits;
+    int value;
+    int count;
+};
+
+struct overallThreadArgs
+{
+    int method;
+    struct calcThreadArgs *values;
 };
 
 // Contadores para cada uma das condições testadas
@@ -43,22 +54,17 @@ long match_some_test = 0,
      have_tripled_digits = 0,
      have_four_repetitions = 0;
 
-void *process_is_palindrome(void *input);
-void *process_has_repeated_seq(void *input);
-void *process_sum_is_ap(void *input);
-void *process_has_tripled_digits(void *input);
-void *process_has_four_repetitions(void *input);
+void *process_method(void *input);
+void *process_result(void *input);
 
 int main(int argc, char *argv[])
 {
-    int ndigits; // núm. de dígitos para representar até o maior número
-    long tmp, maxnum;
+    long tmp;
     struct timeval t1, t2; // marcação do tempo de execução
-    struct threadArgs *threadData = (struct threadArgs *)malloc(sizeof(struct threadArgs));
+    struct overallThreadArgs threadData[NUM_THREADS];
     pthread_t funcThreads[NUM_THREADS];
+    pthread_t calcThread;
     pthread_mutex_init(&lock_all, NULL);
-    pthread_mutex_init(&lock_sem, NULL);
-    sem_init(&semaphore, 0, 0);
 
     // tratamento da linha de comando
     if (argc != 2)
@@ -77,331 +83,119 @@ int main(int argc, char *argv[])
         tmp = tmp / 10;
     } while (tmp > 0);
 
-    threadData->maxnum = maxnum;
-    threadData->ndigits = ndigits;
+    struct calcThreadArgs threadValues[maxnum + 1];
+    for (long i = 0; i < (maxnum + 1); i++)
+    {
+        threadValues[i].count = 0;
+        threadValues[i].value = 0;
+    }
 
     // Marca o tempo e checa cada número na faixa definida.
     // Note que o valor do parâmetro maxnum é considerado inclusive (<=)
     gettimeofday(&t1, NULL);
 
-    pthread_create(&(funcThreads[0]), NULL, process_is_palindrome, (void *)threadData);
-    pthread_create(&(funcThreads[1]), NULL, process_has_repeated_seq, (void *)threadData);
-    pthread_create(&(funcThreads[2]), NULL, process_sum_is_ap, (void *)threadData);
-    pthread_create(&(funcThreads[3]), NULL, process_has_tripled_digits, (void *)threadData);
-    pthread_create(&(funcThreads[4]), NULL, process_is_palindrome, (void *)threadData);
+    pthread_create(&calcThread, NULL, process_result, (void *)&threadValues);
+
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        threadData[i].method = i;
+        threadData[i].values = threadValues;
+        pthread_create(&(funcThreads[i]), NULL, process_method, (void *)&threadData[i]);
+    }
 
     for (int i = 0; i < NUM_THREADS; i++)
         pthread_join(funcThreads[i], NULL);
 
+    pthread_join(calcThread, NULL);
+
     gettimeofday(&t2, NULL);
 
     // Escrita das estatísticas ao final da execução
-    // printf("%ld match_some_test (%d%%)\n", match_some_test, (int)((100.0 * match_some_test) / maxnum));
-    // printf("%ld palindromes\n", palindromes);
-    // printf("%ld repeated_seqs\n", repeated_seqs);
-    // printf("%ld sums_are_ap\n", sums_are_ap);
-    // printf("%ld have_tripled_digits\n", have_tripled_digits);
-    // printf("%ld have_four_repetitions\n", have_four_repetitions);
-    // print_max(ndigits);
-    // printf("\ntempo: %lf\n", timediff(&t2, &t1));
+    printf("%ld match_some_test (%d%%)\n", match_some_test, (int)((100.0 * match_some_test) / maxnum));
+    printf("%ld palindromes\n", palindromes);
+    printf("%ld repeated_seqs\n", repeated_seqs);
+    printf("%ld sums_are_ap\n", sums_are_ap);
+    printf("%ld have_tripled_digits\n", have_tripled_digits);
+    printf("%ld have_four_repetitions\n", have_four_repetitions);
+    print_max(ndigits);
+    printf("\ntempo: %lf\n", timediff(&t2, &t1));
 }
 
-void *process_is_palindrome(void *input)
+void *process_method(void *input)
 {
-    long maxnum = ((struct threadArgs *)input)->maxnum;
-    int ndigits = ((struct threadArgs *)input)->ndigits;
-    int pal;
+    int method = (((struct overallThreadArgs *)input)->method);
+    struct calcThreadArgs *values = (((struct overallThreadArgs *)input)->values);
+    int val = 0;
     digit_t num;
 
     for (long i = 0; i <= maxnum; ++i)
     {
-        // check_num(i, ndigits);
         long orign = i;
 
         // Transforma número (n) em vetor de dígitos (num)
         break_into_digits(i, num, ndigits);
 
-        pal = is_palindrome(num, ndigits);
-
-        palindromes += pal;
-
-        pthread_mutex_lock(&lock_all);
-        all += pal;
-        semCounter++;
-        pthread_mutex_unlock(&lock_all);
-
-        pthread_mutex_lock(&lock_sem);
-        if (semCounter == NUM_THREADS) // Última thread a terminar a execução
+        if (method == ISPALINDROME)
         {
-            // Atualiza valores globais
-            if (all > 0)
-            {
-                match_some_test += 1;
-            }
-            printf("round %ld | value %ld\n", i, orign);
-            update_max(orign, all);
-
-            pthread_mutex_unlock(&lock_sem);
-
-            all = 0;
-            semCounter--;
-            sem_post(&semaphore);
+            val = is_palindrome(num, ndigits);
+            palindromes += val;
+        }
+        else if (method == HASREPSEQ)
+        {
+            val = has_repeated_seq(num, ndigits);
+            repeated_seqs += val;
+        }
+        else if (method == SUMISAP)
+        {
+            val = sum_is_ap(num, ndigits);
+            sums_are_ap += val;
+        }
+        else if (method == HASTRPLDIGITS)
+        {
+            val = has_tripled_digits(num, ndigits);
+            have_tripled_digits += val;
+        }
+        else if (method == HASFOURREP)
+        {
+            val = has_four_repetitions(num, ndigits);
+            have_four_repetitions += val;
         }
         else
         {
-            pthread_mutex_unlock(&lock_sem);
-            sem_wait(&semaphore);
-            if (semCounter > 1)
-            { // Existem threads em espera
-                semCounter--;
-                sem_post(&semaphore);
-            }
-            else
-            { // Não existem mais threads em espera
-                semCounter--;
-            }
+            fprintf(stderr, "Invalid method.\n");
+            exit(EXIT_FAILURE);
         }
+
+        pthread_mutex_lock(&lock_all);
+        values[orign].count++;
+        values[orign].value += val;
+        totalLoops++;
+        pthread_mutex_unlock(&lock_all);
     }
 
     return 0;
 }
 
-void *process_has_repeated_seq(void *input)
+void *process_result(void *input)
 {
-    long maxnum = ((struct threadArgs *)input)->maxnum;
-    int ndigits = ((struct threadArgs *)input)->ndigits;
-    int rep;
-    digit_t num;
-
-    for (long i = 0; i <= maxnum; ++i)
+    struct calcThreadArgs *values = (((struct calcThreadArgs *)input));
+    int valuesSize = (maxnum + 1);
+    while (totalLoops < valuesSize * NUM_THREADS)
     {
-        // check_num(i, ndigits);
-        long orign = i;
-
-        // Transforma número (n) em vetor de dígitos (num)
-        break_into_digits(i, num, ndigits);
-
-        rep = has_repeated_seq(num, ndigits);
-
-        repeated_seqs += rep;
-
-        pthread_mutex_lock(&lock_all);
-        all += rep;
-        semCounter++;
-        pthread_mutex_unlock(&lock_all);
-
-        pthread_mutex_lock(&lock_sem);
-        if (semCounter == NUM_THREADS) // Última thread a terminar a execução
+        for (long i = 0; i < valuesSize; i++)
         {
-            // Atualiza valores globais
-            if (all > 0)
+            if (values[i].count == 5)
             {
-                match_some_test += 1;
-            }
-            printf("round %ld | value %ld\n", i, orign);
-            update_max(orign, all);
-
-            pthread_mutex_unlock(&lock_sem);
-
-            all = 0;
-            semCounter--;
-            sem_post(&semaphore);
-        }
-        else
-        {
-            pthread_mutex_unlock(&lock_sem);
-            sem_wait(&semaphore);
-            if (semCounter > 1)
-            { // Existem threads em espera
-                semCounter--;
-                sem_post(&semaphore);
-            }
-            else
-            { // Não existem mais threads em espera
-                semCounter--;
+                // Atualiza valores globais
+                if (values[i].value > 0)
+                {
+                    match_some_test += 1;
+                }
+                update_max(i, values[i].value);
+                values[i].value = 0;
+                values[i].count = 0;
             }
         }
     }
-
-    return 0;
-}
-
-void *process_sum_is_ap(void *input)
-{
-    long maxnum = ((struct threadArgs *)input)->maxnum;
-    int ndigits = ((struct threadArgs *)input)->ndigits;
-    int sum;
-    digit_t num;
-
-    for (long i = 0; i <= maxnum; ++i)
-    {
-        // check_num(i, ndigits);
-        long orign = i;
-
-        // Transforma número (n) em vetor de dígitos (num)
-        break_into_digits(i, num, ndigits);
-
-        sum = sum_is_ap(num, ndigits);
-
-        repeated_seqs += sum;
-
-        pthread_mutex_lock(&lock_all);
-        all += sum;
-        semCounter++;
-        pthread_mutex_unlock(&lock_all);
-
-        pthread_mutex_lock(&lock_sem);
-        if (semCounter == NUM_THREADS) // Última thread a terminar a execução
-        {
-            // Atualiza valores globais
-            if (all > 0)
-            {
-                match_some_test += 1;
-            }
-            printf("round %ld | value %ld\n", i, orign);
-            update_max(orign, all);
-
-            pthread_mutex_unlock(&lock_sem);
-
-            all = 0;
-            semCounter--;
-            sem_post(&semaphore);
-        }
-        else
-        {
-            pthread_mutex_unlock(&lock_sem);
-            sem_wait(&semaphore);
-            if (semCounter > 1)
-            { // Existem threads em espera
-                semCounter--;
-                sem_post(&semaphore);
-            }
-            else
-            { // Não existem mais threads em espera
-                semCounter--;
-            }
-        }
-    }
-
-    return 0;
-}
-
-void *process_has_tripled_digits(void *input)
-{
-    long maxnum = ((struct threadArgs *)input)->maxnum;
-    int ndigits = ((struct threadArgs *)input)->ndigits;
-    int dou;
-    digit_t num;
-
-    for (long i = 0; i <= maxnum; ++i)
-    {
-        // check_num(i, ndigits);
-        long orign = i;
-
-        // Transforma número (n) em vetor de dígitos (num)
-        break_into_digits(i, num, ndigits);
-
-        dou = has_tripled_digits(num, ndigits);
-
-        repeated_seqs += dou;
-
-        pthread_mutex_lock(&lock_all);
-        all += dou;
-        semCounter++;
-        pthread_mutex_unlock(&lock_all);
-
-        pthread_mutex_lock(&lock_sem);
-        if (semCounter == NUM_THREADS) // Última thread a terminar a execução
-        {
-            // Atualiza valores globais
-            if (all > 0)
-            {
-                match_some_test += 1;
-            }
-            printf("round %ld | value %ld\n", i, orign);
-            update_max(orign, all);
-
-            pthread_mutex_unlock(&lock_sem);
-
-            all = 0;
-            semCounter--;
-            sem_post(&semaphore);
-        }
-        else
-        {
-            pthread_mutex_unlock(&lock_sem);
-            sem_wait(&semaphore);
-            if (semCounter > 1)
-            { // Existem threads em espera
-                semCounter--;
-                sem_post(&semaphore);
-            }
-            else
-            { // Não existem mais threads em espera
-                semCounter--;
-            }
-        }
-    }
-
-    return 0;
-}
-
-void *process_has_four_repetitions(void *input)
-{
-    long maxnum = ((struct threadArgs *)input)->maxnum;
-    int ndigits = ((struct threadArgs *)input)->ndigits;
-    int fou;
-    digit_t num;
-
-    for (long i = 0; i <= maxnum; ++i)
-    {
-        // check_num(i, ndigits);
-        long orign = i;
-
-        // Transforma número (n) em vetor de dígitos (num)
-        break_into_digits(i, num, ndigits);
-
-        fou = has_four_repetitions(num, ndigits);
-
-        repeated_seqs += fou;
-
-        pthread_mutex_lock(&lock_all);
-        all += fou;
-        semCounter++;
-        pthread_mutex_unlock(&lock_all);
-
-        pthread_mutex_lock(&lock_sem);
-        if (semCounter == NUM_THREADS) // Última thread a terminar a execução
-        {
-            // Atualiza valores globais
-            if (all > 0)
-            {
-                match_some_test += 1;
-            }
-            printf("round %ld | value %ld\n", i, orign);
-            update_max(orign, all);
-
-            pthread_mutex_unlock(&lock_sem);
-
-            all = 0;
-            semCounter--;
-            sem_post(&semaphore);
-        }
-        else
-        {
-            pthread_mutex_unlock(&lock_sem);
-            sem_wait(&semaphore);
-            if (semCounter > 1)
-            { // Existem threads em espera
-                semCounter--;
-                sem_post(&semaphore);
-            }
-            else
-            { // Não existem mais threads em espera
-                semCounter--;
-            }
-        }
-    }
-
     return 0;
 }
