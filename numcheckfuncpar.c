@@ -181,22 +181,20 @@ void *process_result(void *input)
     struct calcThreadArgs *values = (((struct calcThreadArgs *)input));
     long valuesSize = (maxnum + 1);
 
-    while (totalLoops < valuesSize * NUM_THREADS)
+    for (long i = 0; i < valuesSize; i++)
     {
-        for (long i = 0; i < valuesSize; i++)
+        while (values[i].count < 5)
+            ;
+
+        // Atualiza valores globais
+        if (values[i].value > 0)
         {
-            if (values[i].count == 5)
-            {
-                // Atualiza valores globais
-                if (values[i].value > 0)
-                {
-                    match_some_test += 1;
-                }
-                update_max(i, values[i].value);
-                values[i].value = 0;
-                values[i].count = 0;
-            }
+            match_some_test += 1;
         }
+        update_max(i, values[i].value);
+        values[i].value = 0;
+        values[i].count = 0;
     }
+
     return 0;
 }
