@@ -32,7 +32,6 @@
 pthread_mutex_t lock_all;
 long maxnum;
 int ndigits; // núm. de dígitos para representar até o maior número
-long totalLoops = 0;
 
 struct calcThreadArgs
 {
@@ -169,7 +168,6 @@ void *process_method(void *input)
         pthread_mutex_lock(&lock_all);
         values[orign].count = values[orign].count + 1;
         values[orign].value = values[orign].value + val;
-        totalLoops++;
         pthread_mutex_unlock(&lock_all);
     }
 
