@@ -32,7 +32,7 @@
 pthread_mutex_t lock_all;
 long maxnum;
 int ndigits; // núm. de dígitos para representar até o maior número
-int totalLoops = 0;
+long totalLoops = 0;
 
 struct calcThreadArgs
 {
@@ -83,7 +83,7 @@ int main(int argc, char *argv[])
         tmp = tmp / 10;
     } while (tmp > 0);
 
-    struct calcThreadArgs threadValues[maxnum + 1];
+    struct calcThreadArgs *threadValues = (struct calcThreadArgs *)malloc(sizeof(struct calcThreadArgs) * (maxnum + 1));
     for (long i = 0; i < (maxnum + 1); i++)
     {
         threadValues[i].count = 0;
@@ -94,7 +94,7 @@ int main(int argc, char *argv[])
     // Note que o valor do parâmetro maxnum é considerado inclusive (<=)
     gettimeofday(&t1, NULL);
 
-    pthread_create(&calcThread, NULL, process_result, (void *)&threadValues);
+    pthread_create(&calcThread, NULL, process_result, threadValues);
 
     for (int i = 0; i < NUM_THREADS; i++)
     {
@@ -167,8 +167,8 @@ void *process_method(void *input)
         }
 
         pthread_mutex_lock(&lock_all);
-        values[orign].count++;
-        values[orign].value += val;
+        values[orign].count = values[orign].count + 1;
+        values[orign].value = values[orign].value + val;
         totalLoops++;
         pthread_mutex_unlock(&lock_all);
     }
@@ -179,7 +179,8 @@ void *process_method(void *input)
 void *process_result(void *input)
 {
     struct calcThreadArgs *values = (((struct calcThreadArgs *)input));
-    int valuesSize = (maxnum + 1);
+    long valuesSize = (maxnum + 1);
+
     while (totalLoops < valuesSize * NUM_THREADS)
     {
         for (long i = 0; i < valuesSize; i++)
